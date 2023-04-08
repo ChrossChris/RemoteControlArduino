@@ -4,6 +4,8 @@
 // Relativpfad funktioniert leider nicht zum Einbinden
 #include "C:/Dokumente/Elektronik & Modellbau/Fernsteuerung/Arduino/inc/definitions.h"
 #include "C:/Dokumente/Elektronik & Modellbau/Fernsteuerung/Arduino/inc/multiplex_heron.h"
+#include "C:/Dokumente/Elektronik & Modellbau/Fernsteuerung/Arduino/inc/dpower_streamline.h"
+#include "C:/Dokumente/Elektronik & Modellbau/Fernsteuerung/Arduino/inc/multiplex_easyglider.h"
 #include "C:/Dokumente/Elektronik & Modellbau/Fernsteuerung/Arduino/inc/graupner_amigo4.h"
 
 LiquidCrystal_I2C lcdRight(DISPLAY_RIGHT, DISPLAY_WIDTH, DISPLAY_HEIGHT);  
@@ -54,19 +56,16 @@ int  motrHoeheMischerFilter  = 0;
 int  flapsFilter             = 0;
 int  trimmHoeheFilter        = 0;
 int  trimmQuerFilter         = 0;
-int  powerStateAccu          = 0;
+byte remoteControlSetting    = 0;
 byte statusScreen            = 0;
 byte statusScreenOld         = 0;
 byte accu                    = 0;
 byte model                   = 0;
-int  flipHoehe               = 1;
-int  flipSeite               = 1;
-int  flipQuer                = 1;
-byte remoteControlSetting    = 0;
 int  accuCells               = 0;
-int  capacity                = 0;
-int  power                   = 0;
-int  powerFilter             = 0;
+int  accuCapacity            = 0;
+int  accuChargeLevel         = 0;
+int  accuChargeLevelFilter   = 0;
+int  accuDischargeTotal_mAh  = 0;
 bool activeTone              = false;
 unsigned int  runningTimeSec = 0;
 unsigned int  throttleTotal  = 0;
@@ -124,16 +123,10 @@ void loop()
   accu                  = (rxMsg[idxMsg]   & B00011100) >> 2;
   statusScreen          = (rxMsg[idxMsg++] & B11100000) >> 5;  
   remoteControlSetting  = rxMsg[idxMsg++];
-  if (!bitRead(remoteControlSetting, FLIP_HOEHE)) flipHoehe =  1;
-  else                                            flipHoehe = -1;
-  if (!bitRead(remoteControlSetting, FLIP_SEITE)) flipSeite =  1;
-  else                                            flipSeite = -1;
-  if (!bitRead(remoteControlSetting, FLIP_QUER))  flipQuer  =  1;
-  else                                            flipQuer  = -1;
 
-  throttleTotal    = (unsigned int)  word(rxMsg[idxMsg+0],rxMsg[idxMsg+1]);  
-  powerStateAccu   = (int)           word(rxMsg[idxMsg+2],rxMsg[idxMsg+3]);
-  idxMsg          += 4;
+  throttleTotal           = (unsigned int)  word(rxMsg[idxMsg+0],rxMsg[idxMsg+1]);  
+  accuDischargeTotal_mAh  = (int)           word(rxMsg[idxMsg+2],rxMsg[idxMsg+3]);
+  idxMsg                 += 4;
   
   byte signs       = rxMsg[idxMsg+ 0];
   trimmHoehe       = rxMsg[idxMsg+ 1];
@@ -162,6 +155,38 @@ void loop()
     idxMsg += 3;
   }
   runningTimeSec  = (unsigned int) word(rxMsg[idxMsg+0],rxMsg[idxMsg+1]);
+
+  // ----------------------------------------------------------------------------------
+  // Ladezustand Akku
+  if (accu == ACCU_4s_5500mAh) 
+  {
+    accuCells       = 4;
+    accuCapacity    = ACCU_CAPACITY_TOTAL_4s_5500mAh;
+    accuChargeLevel = 100L - ((accuDischargeTotal_mAh * 100L) / (9L*accuCapacity/10L)); // 90% Akkukapazität verfügbar bis entladen
+    accuChargeLevel = max(accuChargeLevel, 0);
+  }
+  else if (accu == ACCU_4s_2400mAh) 
+  {
+    accuCells       = 4;
+    accuCapacity    = ACCU_CAPACITY_TOTAL_4s_2400mAh;
+    accuChargeLevel = 100L - ((accuDischargeTotal_mAh * 100L) / (9L*accuCapacity/10L)); // 90% Akkukapazität verfügbar bis entladen
+    accuChargeLevel = max(accuChargeLevel, 0);
+  }
+  else if (accu == ACCU_3s_2200mAh)  
+  {
+    accuCells       = 3;
+    accuCapacity    = ACCU_CAPACITY_TOTAL_3s_2200mAh;
+    accuChargeLevel = 100L - ((accuDischargeTotal_mAh * 100L) / (9L*accuCapacity/10L)); // 90% Akkukapazität verfügbar bis entladen
+    accuChargeLevel = max(accuChargeLevel, 0);
+  }
+  else if (accu == ACCU_3s_1800mAh)  
+  {
+    accuCells       = 3;
+    accuCapacity    = ACCU_CAPACITY_TOTAL_3s_1800mAh;
+    accuChargeLevel = 100L - ((accuDischargeTotal_mAh * 100L) / (9L*accuCapacity/10L)); // 90% Akkukapazität verfügbar bis entladen
+    accuChargeLevel = max(accuChargeLevel, 0);
+  }
+  
   
   // ----------------------------------------------------------------------------------
   // LCD-Displays aktualisieren
@@ -186,6 +211,7 @@ void loop()
     case 4:
       displayJoystickLimits(DISPLAY_LEFT);
       displayConfiguration(DISPLAY_RIGHT);
+      activeTone = false;
       break;
   }
   statusScreenOld = statusScreen;
@@ -207,30 +233,7 @@ void loop()
 
   // ----------------------------------------------------------------------------------
   // Soundwiedergabe für Akkustand
-  // Ladezustand Akku
-  if (accu == ACCU_4s_2400mAh) 
-  {
-    accuCells = 4;
-    capacity  = 2400;
-    power     = 100L - ((throttleTotal * 100L) / ACCU_THROTTLE_TOTALMAX_4s_2400mAh);
-    power     = max(power, 0);
-  }
-  else if (accu == ACCU_3s_2200mAh)  
-  {
-    accuCells = 3;
-    capacity  = 2200;
-    power     = 100L - ((throttleTotal * 100L) / ACCU_THROTTLE_TOTALMAX_3s_2200mAh);
-    power     = max(power, 0);
-  }
-  else if (accu == ACCU_3s_1800mAh)  
-  {
-    accuCells = 3;
-    capacity  = 1800;
-    power     = 100L - ((throttleTotal * 100L) / ACCU_THROTTLE_TOTALMAX_3s_1800mAh);
-    power     = max(power, 0);
-  }
-  
-  if (power == 0)  
+  if (accuChargeLevel == 0)  
   {
     static unsigned long next = millis();
     unsigned long now         = millis();
@@ -240,42 +243,42 @@ void loop()
       next = now + 10000; // Ton alle 10 Sekunden wiederholen
     }
   }
-  else if (power != powerFilter)
+  else if (accuChargeLevel != accuChargeLevelFilter)
   {
     // Ausführliche Auflistung der Soundsequenzen für entsprechenden Akkustand
     // (Soundprofil lässt sich leichter und individuell anpassen, im Gegensatz 
     // zu kompakterer Implementierung.)
-    if      (power ==100)  setSound(seq1000,3);
-    else if (power == 95)  setSound(seq100, 1);
-    else if (power == 90)  setSound(seq100, 2);
-    else if (power == 85)  setSound(seq100, 3);
-    else if (power == 80)  setSound(seq100, 4);
-    else if (power == 75)  setSound(seq500, 3);
-    else if (power == 70)  setSound(seq600, 1);
-    else if (power == 65)  setSound(seq600, 2);
-    else if (power == 60)  setSound(seq600, 3);
-    else if (power == 55)  setSound(seq600, 4);
-    else if (power == 50)  setSound(seq1000,3);
-    else if (power == 45)  setSound(seq100, 1);
-    else if (power == 40)  setSound(seq100, 2);
-    else if (power == 35)  setSound(seq100, 3);
-    else if (power == 30)  setSound(seq100, 4);
-    else if (power == 25)  setSound(seq500, 3);
-    else if (power == 22)  setSound(seq600, 1);
-    else if (power == 19)  setSound(seq600, 2);
-    else if (power == 16)  setSound(seq600, 3);
-    else if (power == 13)  setSound(seq600, 4);
-    else if (power == 10)  setSound(seq1000,3);
-    else if (power ==  9)  setSound(seq100, 1);
-    else if (power ==  8)  setSound(seq100, 2);
-    else if (power ==  7)  setSound(seq100, 3);
-    else if (power ==  6)  setSound(seq100, 4);
-    else if (power ==  5)  setSound(seq500, 3);
-    else if (power ==  4)  setSound(seq100, 1);
-    else if (power ==  3)  setSound(seq100, 2);
-    else if (power ==  2)  setSound(seq100, 3);
-    else if (power ==  1)  setSound(seq100, 4);
-    powerFilter = power;  
+    if      (accuChargeLevel ==100)  setSound(seq1000,3);
+    else if (accuChargeLevel == 95)  setSound(seq100, 1);
+    else if (accuChargeLevel == 90)  setSound(seq100, 2);
+    else if (accuChargeLevel == 85)  setSound(seq100, 3);
+    else if (accuChargeLevel == 80)  setSound(seq100, 4);
+    else if (accuChargeLevel == 75)  setSound(seq500, 3);
+    else if (accuChargeLevel == 70)  setSound(seq600, 1);
+    else if (accuChargeLevel == 65)  setSound(seq600, 2);
+    else if (accuChargeLevel == 60)  setSound(seq600, 3);
+    else if (accuChargeLevel == 55)  setSound(seq600, 4);
+    else if (accuChargeLevel == 50)  setSound(seq1000,3);
+    else if (accuChargeLevel == 45)  setSound(seq100, 1);
+    else if (accuChargeLevel == 40)  setSound(seq100, 2);
+    else if (accuChargeLevel == 35)  setSound(seq100, 3);
+    else if (accuChargeLevel == 30)  setSound(seq100, 4);
+    else if (accuChargeLevel == 25)  setSound(seq500, 3);
+    else if (accuChargeLevel == 22)  setSound(seq600, 1);
+    else if (accuChargeLevel == 19)  setSound(seq600, 2);
+    else if (accuChargeLevel == 16)  setSound(seq600, 3);
+    else if (accuChargeLevel == 13)  setSound(seq600, 4);
+    else if (accuChargeLevel == 10)  setSound(seq1000,3);
+    else if (accuChargeLevel ==  9)  setSound(seq100, 1);
+    else if (accuChargeLevel ==  8)  setSound(seq100, 2);
+    else if (accuChargeLevel ==  7)  setSound(seq100, 3);
+    else if (accuChargeLevel ==  6)  setSound(seq100, 4);
+    else if (accuChargeLevel ==  5)  setSound(seq500, 3);
+    else if (accuChargeLevel ==  4)  setSound(seq100, 1);
+    else if (accuChargeLevel ==  3)  setSound(seq100, 2);
+    else if (accuChargeLevel ==  2)  setSound(seq100, 3);
+    else if (accuChargeLevel ==  1)  setSound(seq100, 4);
+    accuChargeLevelFilter = accuChargeLevel;  
   }
  
   updateSound();

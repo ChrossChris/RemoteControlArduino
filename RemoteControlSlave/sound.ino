@@ -20,7 +20,7 @@ int tickSound(int value, int valueFilter, int minValue, int maxValue, int steps,
 }
 
 
-void setSound(ToneSequence toneSequence[], int size)
+void setSound(const ToneSequence toneSequence[], int size)
 {
   // Initiale Checks
   if (size <  1)               return;

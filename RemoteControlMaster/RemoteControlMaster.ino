@@ -1,9 +1,13 @@
 // Relativpfad funktioniert leider nicht zum Einbinden
 #include "C:/Dokumente/Elektronik & Modellbau/Fernsteuerung/Arduino/inc/definitions.h"
 #include "C:/Dokumente/Elektronik & Modellbau/Fernsteuerung/Arduino/inc/multiplex_heron.h"
+#include "C:/Dokumente/Elektronik & Modellbau/Fernsteuerung/Arduino/inc/dpower_streamline.h"
+#include "C:/Dokumente/Elektronik & Modellbau/Fernsteuerung/Arduino/inc/multiplex_easyglider.h"
 #include "C:/Dokumente/Elektronik & Modellbau/Fernsteuerung/Arduino/inc/graupner_amigo4.h"
 
 #include <Bounce2.h>
+#include <EEPROM.h>
+
 
 // Current state of execution
 #define __INIT__            0
@@ -22,6 +26,7 @@ int   joystickLimits[CHANNELS][MAX_POTI+1];
 byte  statusScreen        = 0;
 unsigned long  startTime  = 0;
 
+
 // Kalibrierungs- und Zusatzstellfunktionen
 int  flaps                = 0;
 int  trimmHoehe           = 0;
@@ -29,30 +34,33 @@ int  trimmQuer            = 0;
 int  querSeiteMischer     = 0;
 int  flapHoeheMischer     = 0;
 int  motrHoeheMischer     = 0;
+int  motrHoeheTotzone     = 0;
 int  querFlapsMischer     = 0;
 int  expoQuer             = 0;
 int  expoHoehe            = 0;
 int  expoSeite            = 0;
 int  butterflyMixer       = 0;
-
 bool butterfly            = false;
 byte remoteControlSetting = 0;
-byte model                = 255;
+byte model                = 0;
 
 // Schalterstellungen zur Richtungsumkehr (Schalterstellungen unterscheiden sich aufgrund Einbaurichtung)
 // (Normalstellung ist aber, wenn alle Schalter nach unten weisen!)
 int  flipHoehe            = 1;
 int  flipSeite            = 1;
-int  flipQuer             = 1;
+int  flipQuerLinks        = 1;
+int  flipQuerRechts       = 1;
+int  flipFlapLinks        = 1;
+int  flipFlapRechts       = 1;
 
 // Ladezustand Akku
-byte  accu                = ACCU_4s_2400mAh;
-float powerStateAccu      = 0.0f;
-float throttleTotal       = 0.0f;
+byte accu                = 0;  // Akku
+long accuDischargeTotal  = 0;  // Entlademenge Akku [mAs] (Milliampersekunden)
+long throttleTotal       = 0;  // Aufkummulierte Gasstellung [%ms] (Prozent*Millisekunden)
 
 // Ausgangssignale an den Sender
 // Container für PPM-Signale für jeden einzelnen Servo
-int   ppm[PPM_CHANNELS]   = {PPM_CENTER_VALUE};
+int  ppm[PPM_CHANNELS]   = {PPM_CENTER_VALUE};
 
 // -----------------------------------------------------------------------------------------------------------------------------  
 void setup()
@@ -64,31 +72,31 @@ void setup()
   pinMode(SWITCH_LINKS_UNTEN,   INPUT);  // ON:  Schalter unten  OFF: Schalter oben
   
   // Nullpunkt und maximale Joystickausschläge: Höhenruder
-  centerPos[HOEHE]                =  analogRead(JOYST_HOEHE);
-  joystickLimits[HOEHE][MIN_POTI] = -335;   // Ausschlag unten
-  joystickLimits[HOEHE][MAX_POTI] =  355;   // Ausschlag oben
+  centerPos[HOEHE]                = analogRead(JOYST_HOEHE);
+  joystickLimits[HOEHE][MIN_POTI] = POTI_HOEHE_MIN;
+  joystickLimits[HOEHE][MAX_POTI] = POTI_HOEHE_MAX;
   
   // Nullpunkt und maximale Joystickausschläge: Seitenruder
-  centerPos[SEITE]                =  analogRead(JOYST_SEITE);
-  joystickLimits[SEITE][MIN_POTI] = -335;   // Ausschlag links
-  joystickLimits[SEITE][MAX_POTI] =  310;   // Ausschlag rechts  
+  centerPos[SEITE]                = analogRead(JOYST_SEITE);
+  joystickLimits[SEITE][MIN_POTI] = POTI_SEITE_MIN;
+  joystickLimits[SEITE][MAX_POTI] = POTI_SEITE_MAX;
   
   // Nullpunkt und maximale Joystickausschläge: Querruder
-  centerPos[QUER]                 =  analogRead(JOYST_QUER);
-  joystickLimits[QUER][MIN_POTI]  = -325;   // Ausschlag links
-  joystickLimits[QUER][MAX_POTI]  =  330;   // Ausschlag rechts
+  centerPos[QUER]                 = analogRead(JOYST_QUER);
+  joystickLimits[QUER][MIN_POTI]  = POTI_QUER_MIN;
+  joystickLimits[QUER][MAX_POTI]  = POTI_QUER_MAX;
   
   // Nullpunkt und maximale Joystickausschläge: Motor
-  centerPos[MOTOR]                =  analogRead(JOYST_MOTOR);
-  joystickLimits[MOTOR][MIN_POTI] = -31768; // Ausschlag unten (wird nie erreicht für den Motor!)
-  joystickLimits[MOTOR][MAX_POTI] =  680;   // Ausschlag oben
+  centerPos[MOTOR]                = analogRead(JOYST_MOTOR);
+  joystickLimits[MOTOR][MIN_POTI] = POTI_MOTOR_MIN;
+  joystickLimits[MOTOR][MAX_POTI] = POTI_MOTOR_MAX;
 
-  // Auswahl und Konfiguration des Modells: Heron per default
-  // (damit wirksam ist, musste zuvor das Modell auf 255 gesetzt werden.)
-  setModel(0);
-  if (flipHoehe == 1)  bitClear(remoteControlSetting, FLIP_HOEHE);   else  bitSet(remoteControlSetting, FLIP_HOEHE);
-  if (flipSeite == 1)  bitClear(remoteControlSetting, FLIP_SEITE);   else  bitSet(remoteControlSetting, FLIP_SEITE);
-  if (flipQuer  == 1)  bitClear(remoteControlSetting, FLIP_QUER);    else  bitSet(remoteControlSetting, FLIP_QUER);
+  // Auswahl und Konfiguration des Modells und des Akkus: Die vorherige Auswahl wird per Default
+  // eingestellt.
+  model = EEPROM.read(EEPROM_ADDRESS_MODEL);
+  accu  = EEPROM.read(EEPROM_ADDRESS_ACCU);
+  setModel(model);
+
 
   // PPM-Generierung und Timer für Interrupt-Erzeugung
   for (int i=0; i < PPM_CHANNELS; i++)  ppm[i] = PPM_CENTER_VALUE;
@@ -165,10 +173,10 @@ void loop()
 
   // Schalterstellungen:
   // ON: Schalter oben   OFF: Schalter unten 
-  bool switchLinksOben   = !digitalRead(SWITCH_LINKS_OBEN);  // Korrektur nötig, da Schalter links invers verbaut ist
-  bool switchLinksUnten  =  digitalRead(SWITCH_LINKS_UNTEN); 
-  bool switchRechtsOben  =  digitalRead(SWITCH_RECHTS_OBEN);
-  bool switchRechtsUnten =  digitalRead(SWITCH_RECHTS_UNTEN);
+  const bool switchLinksOben   = !digitalRead(SWITCH_LINKS_OBEN);  // Korrektur nötig, da Schalter links invers verbaut ist
+  const bool switchLinksUnten  =  digitalRead(SWITCH_LINKS_UNTEN); 
+  const bool switchRechtsOben  =  digitalRead(SWITCH_RECHTS_OBEN);
+  const bool switchRechtsUnten =  digitalRead(SWITCH_RECHTS_UNTEN);
   
   // Mischanteile und Aufspaltung der Querruderwerte für individuelle
   // Anlenkung (Querruder werden als Wölbklappen/Flaps verwendet)
@@ -200,51 +208,51 @@ void loop()
   else if (state == __TRIMMING__)
   { 
     // Auswahl von Modell und und eingesetztem Akku
-    const int modelSelection = analogRead(POTI_LINKS_1);
-    const int accuSelection  = analogRead(POTI_LINKS_2);
-    setModel(modelSelection);
-    setAccu(accuSelection);
-
-    // Zurücksetzen des Akkuladezustands (kann zur Verzehrungen führen, daher nur bei vollem
-    // Akku machen)
-    powerStateAccu = 0.0f;
-    throttleTotal  = 0.0f;
-
-    // Manuelle Schalterstellung einlesen für Richtungsumkehr der Joystickknüppel,
-    // wenn der Schalter umgelegt ist, aber ist nicht der Standardfall
-    if (switchLinksUnten  == ON)
-    {
-      if (switchRechtsOben  == ON) flipHoehe = -1;
-      else                         flipHoehe =  1;  
-      if (switchRechtsUnten == ON) flipSeite = -1;
-      else                         flipSeite =  1;
-      if (switchLinksOben   == ON) flipQuer  = -1;
-      else                         flipQuer  =  1;
-    }
-
-    if (flipHoehe == 1)  bitClear(remoteControlSetting, FLIP_HOEHE);   else  bitSet(remoteControlSetting, FLIP_HOEHE);
-    if (flipSeite == 1)  bitClear(remoteControlSetting, FLIP_SEITE);   else  bitSet(remoteControlSetting, FLIP_SEITE);
-    if (flipQuer  == 1)  bitClear(remoteControlSetting, FLIP_QUER);    else  bitSet(remoteControlSetting, FLIP_QUER);
-
+    int newModel = 0;
+    accu     = map(analogRead(POTI_LINKS_2), 0, 1024, 0, AMOUNT_OF_ACCUS);
+    newModel = map(analogRead(POTI_LINKS_1), 0, 1024, 0, AMOUNT_OF_MODELS); 
+    if (newModel != model)  setModel(newModel);
+ 
     // Maximale Auslenkungen der Knüppel für die jeweiligen Achsen festlegen
-    setJoystickLimits(old_state != state);
+    const bool resetInitialLimits = (old_state != state) || (newModel != model);
+    setJoystickLimits(resetInitialLimits);
 
     // Knüppelpositionen werden aus den Potis eingelesen und skaliert,
     // damit sie auch während der Trimmung eine Wirkung zeigen
     readJoysticks();
 
     // Zusätzliche Trimmsignale (die im normalen Mode __RUNNING__ nicht eingestellt werden können, da alle Analogeingänge bereits doppelt belegt in Verwendung sind
-    expoSeite        = analogRead(POTI_RECHTS_1);
+    static int bufferPotiRechts1;
+    static int bufferPotiRechts2;
+    if ((old_state != state) || (newModel != model))
+    {
+      bufferPotiRechts1 = analogRead(POTI_RECHTS_1);
+      bufferPotiRechts2 = analogRead(POTI_RECHTS_2);
+    }
+    else 
+    {
+      if (abs(bufferPotiRechts1-analogRead(POTI_RECHTS_1)) > 50)
+      {
+        expoSeite         = analogRead(POTI_RECHTS_1);
+        bufferPotiRechts1 = -51; // Sicherstellen, dass immer der aktuelle Wert übernommen wird und sich das Poti nicht zufällig wieder in Ausgangslage befindet
+      }
+      if (abs(bufferPotiRechts2-analogRead(POTI_RECHTS_2)) > 50)
+      {
+        motrHoeheMischer  = analogRead(POTI_RECHTS_2);
+        motrHoeheMischer  = mapWithDeadzone(motrHoeheMischer, 0, LIMIT_MH_MISCHER, 0, DEADZONE);  // symmetrische Skalierung zwischen den Grenzen und einer Totzone
+        bufferPotiRechts2 = -51; // Sicherstellen, dass immer der aktuelle Wert übernommen wird und sich das Poti nicht zufällig wieder in Ausgangslage befindet
+      }
+    }
+        
     flapHoeheMischer = 512; // Flap-Höhe-Mixer in Mittelstellung (nicht verwendet), da nicht mehr genügend Analogeingänge vorhanden
-    motrHoeheMischer = analogRead(POTI_RECHTS_2);
     flapHoeheMischer = mapWithDeadzone(flapHoeheMischer, -LIMIT_FH_MISCHER, LIMIT_FH_MISCHER, CENTER_POS, DEADZONE);  // symmetrische Skalierung zwischen den Grenzen und einer Totzone
-    motrHoeheMischer = mapWithDeadzone(motrHoeheMischer,                 0, LIMIT_MH_MISCHER,          0, DEADZONE);  // symmetrische Skalierung zwischen den Grenzen und einer Totzone
      
-    querLinks    = joysticks[QUER];
-    querRechts   = joysticks[QUER];
-    flapLinks    = (long) querFlapsMischer * querLinks  / 100;
-    flapRechts   = (long) querFlapsMischer * querRechts / 100;    
-    statusScreen = 4;
+    querLinks         = joysticks[QUER];
+    querRechts        = joysticks[QUER];
+    flapLinks         = (long) querFlapsMischer * querLinks  / 100;
+    flapRechts        = (long) querFlapsMischer * querRechts / 100;    
+    statusScreen      = 4;
+    model             = newModel;
   }
 
   else if (state == __STOP_TRIMMING__)
@@ -259,6 +267,15 @@ void loop()
     // Motor kann nicht negativ ausgelenkt werden, daher immer auf null setzen, egal ob
     // verändert wurde oder nicht
     joystickLimits[MOTOR][MIN] = 0;
+
+    // Zurücksetzen des Akkuladezustands (kann zur Verzehrungen führen, daher nur bei vollem
+    // Akku machen)
+    accuDischargeTotal = 0;
+    throttleTotal      = 0;
+    
+    // Speichere Modell- und Akkuauswahl im EEProm
+    EEPROM.update(EEPROM_ADDRESS_MODEL, model);
+    EEPROM.update(EEPROM_ADDRESS_ACCU,  accu);
   
     // Reset status screen and start time for normal running mode
     startTime    = millis();
@@ -332,9 +349,9 @@ void loop()
     joysticks[QUER]  = applyExpoCurve(QUER,  expoQuer);
 
     // Mixer: Ruderausschläge zumischen
-    joysticks[SEITE] = mixer(SEITE, joysticks[QUER],          querSeiteMischer); // QS-Mischer: Querruder zu Seitenruder mischen
-    joysticks[HOEHE] = mixer(HOEHE, flaps*CONTROL_LIMIT/100,  flapHoeheMischer); // FH-Mischer: Flaps zu Höhenruder mischen
-    joysticks[HOEHE] = mixer(HOEHE, joysticks[MOTOR],        -motrHoeheMischer); // MH-Mischer: Motor zu Höhenruder mischen (automatisches Drücken)
+    joysticks[SEITE] = mixer(SEITE, joysticks[QUER],         querSeiteMischer,                0,  joystickLimits[QUER][MAX]);  // QS-Mischer: Querruder zu Seitenruder mischen
+    joysticks[HOEHE] = mixer(HOEHE, flaps*CONTROL_LIMIT/100, flapHoeheMischer,                0,              CONTROL_LIMIT);  // FH-Mischer: Flaps zu Höhenruder mischen
+    joysticks[HOEHE] = mixer(HOEHE, joysticks[MOTOR],       -motrHoeheMischer, motrHoeheTotzone, joystickLimits[MOTOR][MAX]);  // MH-Mischer: Motor zu Höhenruder mischen (automatisches Drücken)
 
     // 2-Klappenkonfiguration (ohne Wölbklappen wie Solius und Amigo), Querruder können als
     // Wölbklappen für den Landeanflug verstellt werden.
@@ -428,13 +445,13 @@ void loop()
   }
 
   // PPM-Signale setzen, außer Querruder, die links und rechts getrennt ausgegeben werden.
-  setPPM(PPM_MOTOR,                   joysticks[MOTOR], 0);
-  setPPM(PPM_HOEHE,       flipHoehe * joysticks[HOEHE], trimmHoehe);
-  setPPM(PPM_SEITE,       flipSeite * joysticks[SEITE], 0);
-  setPPM(PPM_QUER_LINKS,  flipQuer  * querLinks,        0);
-  setPPM(PPM_QUER_RECHTS, flipQuer  * querRechts,       0);
-  setPPM(PPM_FLAP_LINKS,  flipQuer  * flapLinks,        0);
-  setPPM(PPM_FLAP_RECHTS, flipQuer  * flapRechts,       0);
+  setPPM(PPM_MOTOR,                        joysticks[MOTOR], 0);
+  setPPM(PPM_HOEHE,       flipHoehe      * joysticks[HOEHE], trimmHoehe);
+  setPPM(PPM_SEITE,       flipSeite      * joysticks[SEITE], 0);
+  setPPM(PPM_QUER_LINKS,  flipQuerLinks  * querLinks,        0);
+  setPPM(PPM_QUER_RECHTS, flipQuerRechts * querRechts,       0);
+  setPPM(PPM_FLAP_LINKS,  flipFlapLinks  * flapLinks,        0);
+  setPPM(PPM_FLAP_RECHTS, flipFlapRechts * flapRechts,       0);
     
   // Berechnung des Akku-Ladezustands auf Basis des Motoraktuierung
   // und der zugrunde liegenden charakteristischen Stromkurve

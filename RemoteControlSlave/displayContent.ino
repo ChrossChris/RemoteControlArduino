@@ -1,25 +1,25 @@
 // ------------------------------------------------------------------------------------------
-// Screen Status: Aktueller Status von Laufzeit und Akkuladezustand
+// Screen Statusanzeige: Aktueller Status von Modell und Akku
 // ------------------------------------------------------------------------------------------
 void displayStatus(const byte lcdAddress)
 {
   // Darzustellender Inhalt wird vorgehalten
-  char info[DISPLAY_HEIGHT][DISPLAY_WIDTH];
+  char info[DISPLAY_HEIGHT][DISPLAY_WIDTH+1]; // +1 für Null-Terminator des Strings
 
-  // Laufzeit, Gas akkumuliert
-  //               01234567890123456789
-  sprintf(info[0],"Zeit:       %3dm:%02ds", (runningTimeSec / 60), (runningTimeSec % 60));
+  // Anzeige des ausgewählten Modells
+  //                                                         01234567890123456789
+  if      (model == DPOWER_STREAMLINE)      sprintf(info[0],"D-Power Streaml.270X");
+  else if (model == MULTIPLEX_HERON)        sprintf(info[0],"Multiplex Heron     ");
+  else if (model == MULTIPLEX_EASYGLIDER)   sprintf(info[0],"Mulitplex EasyGlider");
+  else if (model == GRAUPNER_AMIGO4)        sprintf(info[0],"Graupner Amigo 4    ");
 
   //               01234567890123456789
-  sprintf(info[1],"Accu: LiPo%ds %4dmAh  %2ds", accuCells, capacity);
-  sprintf(info[2],"%5u  %4dmAh  %3d%%", throttleTotal, powerStateAccu, power);
-  if (power > 0) setLevelMeter(info[3], power, 0, 100, 20);
-  else
-  { 
-    //               01234567890123456789
-    sprintf(info[3],"!! BATTERY  EMPTY !");
-    info[3][DISPLAY_WIDTH-1] = '!';  // Null-Byte am Ende des Strings überschreiben
-  }
+  sprintf(info[1],"LiPo%ds %4dmAh  %3d%%", accuCells, accuCapacity, accuChargeLevel);
+  sprintf(info[2],"%2dm%02ds %5u %4dmAh", (runningTimeSec / 60) % 100, (runningTimeSec % 60), throttleTotal, accuDischargeTotal_mAh); // maximale Minuten auf 99 begrenzt
+                     
+  //                                        01234567890123456789
+  if (accuChargeLevel > 0) setLevelMeter(info[3], accuChargeLevel, 0, 100, 20);
+  else                     sprintf(info[3],"!! BATTERY  EMPTY !!");
 
   updateDisplay(lcdAddress, info);
 }
@@ -31,7 +31,7 @@ void displayStatus(const byte lcdAddress)
 // ------------------------------------------------------------------------------------------
 void displayJoystickPosition(const byte lcdAddress)
 {
-  char info[DISPLAY_HEIGHT][DISPLAY_WIDTH];
+  char info[DISPLAY_HEIGHT][DISPLAY_WIDTH+1]; // +1 für Null-Terminator des Strings
 
   // Joystick: Höhenruder
   int i = 0;
@@ -71,17 +71,13 @@ void displayJoystickPosition(const byte lcdAddress)
 void displayJoystickLimits(const byte lcdAddress)
 {
   // Darzustellender Inhalt wird vorgehalten
-  char info[DISPLAY_HEIGHT][DISPLAY_WIDTH];
+  char info[DISPLAY_HEIGHT][DISPLAY_WIDTH+1]; // +1 für Null-Terminator des Strings
 
-  //                                              01234567890123456789
-  if (flipHoehe == 1) sprintf(info[0],"HR ^^ %4d%% vv %4d%%", joystickLimits[0][MIN], joystickLimits[0][MAX]);
-  else                sprintf(info[0],"HR vv %4d%% ^^ %4d%%", joystickLimits[0][MAX], joystickLimits[0][MIN]);
-  if (flipSeite == 1) sprintf(info[1],"SR << %4d%% >> %4d%%", joystickLimits[1][MIN], joystickLimits[1][MAX]);
-  else                sprintf(info[1],"SR >> %4d%% << %4d%%", joystickLimits[1][MAX], joystickLimits[1][MIN]);
-  if (flipQuer == 1)  sprintf(info[2],"QR << %4d%% >> %4d%%", joystickLimits[2][MIN], joystickLimits[2][MAX]);
-  else                sprintf(info[2],"QR >> %4d%% << %4d%%", joystickLimits[2][MAX], joystickLimits[2][MIN]);
   //               01234567890123456789
-  sprintf(info[3],"Motor max.      %3d", joystickLimits[3][MAX]);
+  sprintf(info[0],"HR ^^ %4d%% vv %4d%%", joystickLimits[0][MIN], joystickLimits[0][MAX]);
+  sprintf(info[1],"SR << %4d%% >> %4d%%", joystickLimits[1][MIN], joystickLimits[1][MAX]);
+  sprintf(info[2],"QR vv %4d%% ^^ %4d%%", joystickLimits[2][MIN], joystickLimits[2][MAX]);
+  sprintf(info[3],"Motor max.      %3d",  joystickLimits[3][MAX]);
   info[3][DISPLAY_WIDTH-1] = '%';
 
   updateDisplay(lcdAddress, info);
@@ -95,7 +91,7 @@ void displayJoystickLimits(const byte lcdAddress)
 void displayConfiguration(const byte lcdAddress)
 {
   // Darzustellender Inhalt wird vorgehalten
-  char info[DISPLAY_HEIGHT][DISPLAY_WIDTH];
+  char info[DISPLAY_HEIGHT][DISPLAY_WIDTH+1]; // +1 für Null-Terminator des Strings
 
   //               01234567890123456789
   sprintf(info[0],"ExSR ");
@@ -103,13 +99,16 @@ void displayConfiguration(const byte lcdAddress)
   sprintf(info[1],"MxMH ");
   setLevelMeter(info[1], motrHoeheMischer, 0, LIMIT_MH_MISCHER, 15);
 
-  //                                                   01234567890123456789
-  if (model == MULTIPLEX_HERON)       sprintf(info[2],"Multiplex Heron     ");
-  else if (model == GRAUPNER_AMIGO4)  sprintf(info[2],"Graupner Amigo IV   ");
-  else                                sprintf(info[2],"Model undefined     ");
+  //                                                       01234567890123456789
+  if      (model == MULTIPLEX_HERON)      sprintf(info[2],"Multiplex Heron     ");
+  else if (model == DPOWER_STREAMLINE)    sprintf(info[2],"D-Power Streamline  ");
+  else if (model == MULTIPLEX_EASYGLIDER) sprintf(info[2],"Multiplex EasyGlider");
+  else if (model == GRAUPNER_AMIGO4)      sprintf(info[2],"Graupner Amigo IV   ");
+  else                                    sprintf(info[2],"Model undefined     ");
 
   //                                                   01234567890123456789
-  if      (accu == ACCU_4s_2400mAh)   sprintf(info[3],"Accu: LiPo4s 2400mAh");
+  if      (accu == ACCU_4s_5500mAh)   sprintf(info[3],"Accu: LiPo4s 5500mAh");
+  else if (accu == ACCU_4s_2400mAh)   sprintf(info[3],"Accu: LiPo4s 2400mAh");
   else if (accu == ACCU_3s_2200mAh)   sprintf(info[3],"Accu: LiPo3s 2200mAh");
   else if (accu == ACCU_3s_1800mAh)   sprintf(info[3],"Accu: LiPo3s 1800mAh");
   else                                sprintf(info[3],"Accu: undefined     ");
@@ -126,14 +125,14 @@ void displayConfiguration(const byte lcdAddress)
 void displayAddFunctionsNumeric(const byte lcdAddress)
 {
   // Darzustellender Inhalt wird vorgehalten
-  char info[DISPLAY_HEIGHT][DISPLAY_WIDTH];
+  char info[DISPLAY_HEIGHT][DISPLAY_WIDTH+1]; // +1 für Null-Terminator des Strings
 
   //               01234567890123456789
-  sprintf(info[0],"ExHR%4d%% TrHR %4d ",   expoHoehe,        trimmHoehe);
-  sprintf(info[1],"ExQR%4d%% TrQR %4d ",   expoQuer,         trimmQuer);
-  sprintf(info[2],"ExSR%4d%% MxQS %4d%%",  expoSeite,        querSeiteMischer);
-  sprintf(info[3],"MxMH%4d%% MxQF %4d%%",  motrHoeheMischer, querFlapsMischer);
-  info[3][DISPLAY_WIDTH-1] = '%'; // Null-Byte am Ende des Strings überschreiben
+  sprintf(info[0],"ExHR%4d%% TrHR %4d ",  expoHoehe,        trimmHoehe);
+  sprintf(info[1],"ExQR%4d%% TrQR %4d ",  expoQuer,         trimmQuer);
+  sprintf(info[2],"ExSR%4d%% MxQS %4d%%", expoSeite,        querSeiteMischer);
+  sprintf(info[3],"MxMH%4d%% MxQF %4d%%", motrHoeheMischer, querFlapsMischer);
+  //info[3][DISPLAY_WIDTH-1] = '%'; // Null-Byte am Ende des Strings überschreiben
   updateDisplay(lcdAddress, info);
 }
 // ------------------------------------------------------------------------------------------
@@ -146,7 +145,7 @@ void displayAddFunctionsNumeric(const byte lcdAddress)
 void displayAddFunctionsGraphic(const byte lcdAddress)
 {
   // Darzustellender Inhalt wird vorgehalten
-  char info[DISPLAY_HEIGHT][DISPLAY_WIDTH];
+  char info[DISPLAY_HEIGHT][DISPLAY_WIDTH+1]; // +1 für Null-Terminator des Strings
   int  i = 0;
                                                              
   if (bitRead(remoteControlSetting, TRIMM_EXPO_HOEHE) == 0)

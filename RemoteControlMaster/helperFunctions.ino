@@ -14,6 +14,28 @@ void readJoysticks()
       if (joysticks[i] < 0)  joysticks[i] = map(joysticks[i],  joystickLimits[i][MIN_POTI], 0, -joystickLimits[i][MAX], 0);
       else                   joysticks[i] = map(joysticks[i],  0, joystickLimits[i][MAX_POTI],  0, joystickLimits[i][MAX]);      
     }
+    // Nichtlineare Kennlinie für die Motorstellung (in Zukunft als separate Funktion wie der Mischer):
+    // -  0..  5% Geberstellung gehen auf       0% maximaler Gasstellung
+    // -  5.. 10% Geberstellung gehen auf  0.. 30% maximaler Gasstellung
+    // - 10.. 90% Geberstellung gehen auf 30.. 70% maximaler Gasstellung
+    // - 90..100% Geberstellung gehen auf 70..100% maximaler Gasstellung
+    // (Erste Implementierung, Kennlinie sollte eigentlich parametrierbar sein, ähnlich wie Expo und Mischer, allerdings schwieriger in der Eingabe)
+    else if (i == MOTOR)
+    {
+      const int x1 = (5*joystickLimits[i][MAX_POTI])/100; //   5%
+      const int x2 = (1*joystickLimits[i][MAX_POTI])/10;  //  10%
+      const int x3 = (9*joystickLimits[i][MAX_POTI])/10;  //  90%
+      const int x4 =    joystickLimits[i][MAX_POTI];      // 100%
+      const int y1 =  0;                                  //   0%
+      const int y2 = (3*joystickLimits[i][MAX])/10;       //  30%
+      const int y3 = (7*joystickLimits[i][MAX])/10;       //  70%
+      const int y4 =    joystickLimits[i][MAX];           // 100% 
+      
+      if      (joysticks[i] < x1) joysticks[i] = y1;
+      else if (joysticks[i] < x2) joysticks[i] = map(joysticks[i],  x1, x2, y1, y2);
+      else if (joysticks[i] < x3) joysticks[i] = map(joysticks[i],  x2, x3, y2, y3);
+      else                        joysticks[i] = map(joysticks[i],  x3, x4, y3, y4);
+    }
     else
     {
       if (joysticks[i] < 0)  joysticks[i] = map(joysticks[i],  joystickLimits[i][MIN_POTI], 0,   joystickLimits[i][MIN],  0);
@@ -80,16 +102,24 @@ int mapWithDeadzone(const int value, const int minOut, const int maxOut, const i
 // in beide Richtungen einen unterschiedlich langen Stellweg am Servo zur Folge haben. Ansonsten würde
 // bspw. bereits der Anschlag bei halber Joystickauslenkung erreicht werden. Somit ergibt sich ein 
 // besseres und nachvollziehbareres Steuergefühl.
-// trg:   Zielkanal, auf den gemixt wird
-// src:   Ausgangskanal, der den Mix steuert (in maximal Ruderausschlag CONTROL_LIMIT)
-// value: Mixanteil in Prozent: ruderkanal += value [%] * source
-int mixer(const byte trg, const int src, const int value)
+// targetChannel:     Zielkanal, dem zugemischt werden soll
+// mixIn:             Eingangswert, der den Mischer steuert (in maximal Ruderausschlag CONTROL_LIMIT)
+// gain:              Verstärkungswert des Mischeranteil in Prozent: ruderkanal += gain [%] * source
+// inputDeadzone:     Totzone im Eingangskanal, erst bei Überschreiten dieses Werts wird der Mischer aktiv
+// inputMaximu:       Maximalwert des Eingangskanals (entsprechend der eingestellten Begrenzung nicht bei CONTROL_LIMIT)
+int mixer(const byte targetChannel, const int mixIn, const int gain, const int inputDeadzone, const int inputMaximum)
 {
-  int mix = (long) value * src / 100; // Skalierung entsprechend Prozentanteil von value
-  mix     = constrain(mix, joystickLimits[trg][MIN], joystickLimits[trg][MAX]);  // Mixanteil darf die maximalen Ruderausschläge nicht überschreiten
-  if  (joysticks[trg] < 0)  mix = map(joysticks[trg], joystickLimits[trg][MIN], 0, joystickLimits[trg][MIN], mix);  // Mixer verschiebt die Nulllage, somit verbleiben 100%
-  else                      mix = map(joysticks[trg], 0, joystickLimits[trg][MAX], mix, joystickLimits[trg][MAX]);  // Auslenkung für die Joysticks in beide Richtungen (mit jeweils 
-                                                                                                                    // unterschiedlich lang resultierendem Stellweg am Servo)
+  int mix = 0;
+  if (abs(mixIn) > inputDeadzone)
+  {
+    const int sign = mixIn > 0 ? 1 : -1;
+    mix = (long) gain * CONTROL_LIMIT * sign*(abs(mixIn)-inputDeadzone) / (100L*(inputMaximum - inputDeadzone));  // Skalierung entsprechend Prozentanteil von gain
+    mix = constrain(mix, joystickLimits[targetChannel][MIN], joystickLimits[targetChannel][MAX]);                 // Mixanteil darf die maximalen Ruderausschläge nicht überschreiten
+  }
+  
+  if  (joysticks[targetChannel] < 0)  mix = map(joysticks[targetChannel], joystickLimits[targetChannel][MIN], 0, joystickLimits[targetChannel][MIN], mix);  // Mixer verschiebt die Nulllage, somit verbleiben 100%
+  else                                mix = map(joysticks[targetChannel], 0, joystickLimits[targetChannel][MAX], mix, joystickLimits[targetChannel][MAX]);  // Auslenkung für die Joysticks in beide Richtungen (mit jeweils 
+                                                                                                                                                            // unterschiedlich lang resultierendem Stellweg am Servo)
   return mix;
 }
 // -----------------------------------------------------------------------------------------

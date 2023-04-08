@@ -1,13 +1,14 @@
-void setLevelMeter(char str[DISPLAY_WIDTH], const int value, const int minValue, const int maxValue, int sizeLevelMeter)
+void setLevelMeter(char str[DISPLAY_WIDTH+1], const int value, const int minValue, const int maxValue, int sizeLevelMeter)
 {
   // Initial einmal alles löschen (ging auch durch Auffüllen der übrigen Zeichen, aber
   // Code-Effizienz plus Sonderfall ohne Ausschlag gegenüber Verständlichkeit hat verloren ;-)
+
   for (int idx = DISPLAY_WIDTH - sizeLevelMeter; idx < DISPLAY_WIDTH; idx++)  str[idx] = ' ';
 
   // Sinnvoller Wert übergeben, für die die Anzeige generiert werden kann?  
-  if      ((sizeLevelMeter < 1) || (sizeLevelMeter > 20))  str = "ERR: levelMeter OoS ";
-  else if (minValue >  0 )                                 str = "ERR: minValue > 0   ";
-  else if (maxValue <= 0 )                                 str = "ERR: maxValue < 0   "; 
+  if      ((sizeLevelMeter < 1) || (sizeLevelMeter > 20))  sprintf(str,"ERR: levelMeter OoS ");
+  else if (minValue >  0 )                                 sprintf(str,"ERR: minValue > 0   ");
+  else if (maxValue <= 0 )                                 sprintf(str,"ERR: maxValue < 0   "); 
 
   // Eigentliche Ausgabe 
   else if (minValue < 0)

@@ -5,15 +5,6 @@ void setPPM(const byte ruder, int value, int trimmValue)
   // unvollständiger Wert im Array enthalten ist.
   int ppmValue = PPM_CENTER_VALUE;
 
-  // Sonderfall: Anderer Servo, Signal ist invers (Vermutlich die Ursache, anders nicht erklärbar)
-  // Daher wird das PPM-Signal noch einmal überschrieben
-  if ((model == MULTIPLEX_HERON) && (ruder == PPM_QUER_LINKS))
-  {
-    value      = -value;
-    trimmValue = -trimmValue;
-  }
-
-
   if (ruder != PPM_MOTOR)
   {
     if (value < 0) ppmValue  = map(value, -CONTROL_LIMIT, 0, PPM_CENTER_VALUE-PPM_LEVEL,  PPM_CENTER_VALUE+trimmValue);

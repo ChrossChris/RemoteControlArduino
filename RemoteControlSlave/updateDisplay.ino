@@ -1,12 +1,12 @@
-void updateDisplay(const byte lcdAddress, const char displayText[DISPLAY_HEIGHT][DISPLAY_WIDTH])
+void updateDisplay(const byte lcdAddress, const char displayText[DISPLAY_HEIGHT][DISPLAY_WIDTH+1])
 {
    
   //                                                               01234567890123456789
-  static char displayTextRight[DISPLAY_HEIGHT][DISPLAY_WIDTH] = { "                    ",
+  static char displayTextRight[DISPLAY_HEIGHT][DISPLAY_WIDTH+1] = { "                    ",
                                                                   "                    ",
                                                                   "                    ",
                                                                   "                    " };
-  static char displayTextLeft[DISPLAY_HEIGHT][DISPLAY_WIDTH]  = { "                    ",
+  static char displayTextLeft[DISPLAY_HEIGHT][DISPLAY_WIDTH+1]  = { "                    ",
                                                                   "                    ",
                                                                   "                    ",
                                                                   "                    " };  
